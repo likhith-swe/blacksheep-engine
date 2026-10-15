@@ -1,0 +1,18 @@
+{
+  "en": {
+    "label": "English",
+    "llmInstruction": "Please respond in English."
+  },
+  "es": {
+    "label": "Español",
+    "llmInstruction": "Por favor, responde en español."
+  },
+  "fr": {
+    "label": "Français",
+    "llmInstruction": "Veuillez répondre en français."
+  },
+  "de": {
+    "label": "Deutsch",
+    "llmInstruction": "Bitte antworten Sie auf Deutsch."
+  }
+}

@@ -1,0 +1,29 @@
+# ==============================================================================
+# Black Sheep Ventures - Collective Intelligence Engine Dependencies
+# Python 3.11 - 3.12 required
+# Install: pip install -r requirements.txt
+# ==============================================================================
+
+# Core Web & REST API
+flask>=3.0.0
+flask-cors>=6.0.0
+
+# LLM Client & Networking
+openai>=1.0.0
+httpx>=0.27.0
+
+# Zep Cloud Temporal Graph Memory
+zep-cloud==3.25.0
+
+# Multi-Agent Social Simulation (OASIS / CAMEL-AI)
+camel-oasis==0.2.5
+camel-ai==0.2.78
+
+# Document Parsing & Charset Detection
+PyMuPDF>=1.24.0
+charset-normalizer>=3.0.0
+chardet>=5.0.0
+
+# Environment & Data Validation
+python-dotenv>=1.0.0
+pydantic>=2.0.0
