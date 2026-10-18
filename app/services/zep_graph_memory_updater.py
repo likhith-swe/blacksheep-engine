@@ -622,17 +622,23 @@ class ZepGraphMemoryManager:
         return True
     
     @classmethod
-    def stop_updater(cls, simulation_id: str):
+    def stop_updater(cls, simulation_id: str, force: bool = False):
         """Stop and unregister updater for a simulation."""
         with cls._lock:
             updater = cls._updaters.get(simulation_id)
         if updater is None:
             return
 
-        updater.stop()
-        with cls._lock:
-            if cls._updaters.get(simulation_id) is updater:
-                cls._updaters.pop(simulation_id, None)
+        try:
+            updater.stop()
+        except Exception as e:
+            if not force:
+                raise
+            logger.warning(f"Forced updater stop ignored exception for {simulation_id}: {e}")
+        finally:
+            with cls._lock:
+                if cls._updaters.get(simulation_id) is updater:
+                    cls._updaters.pop(simulation_id, None)
         logger.info(f"Stopped graph memory updater: simulation_id={simulation_id}")
     
     _stop_all_done = False

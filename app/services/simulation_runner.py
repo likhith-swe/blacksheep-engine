@@ -431,9 +431,19 @@ class SimulationRunner:
                 RunnerStatus.PAUSED,
                 RunnerStatus.STOPPING,
             }
-            if (
-                existing and existing.runner_status in active_statuses
-            ) or ZepGraphMemoryManager.get_updater(simulation_id) is not None:
+            active_updater = ZepGraphMemoryManager.get_updater(simulation_id)
+            updater_is_active = False
+            if active_updater is not None:
+                worker_alive = bool(
+                    active_updater._worker_thread and active_updater._worker_thread.is_alive()
+                )
+                if active_updater._running or worker_alive:
+                    updater_is_active = True
+                else:
+                    # Inactive orphan updater, discard it safely
+                    ZepGraphMemoryManager.stop_updater(simulation_id, force=True)
+
+            if (existing and existing.runner_status in active_statuses) or updater_is_active:
                 raise ValueError(f"Simulation is already running or finalizing: {simulation_id}")
             cls._save_run_state(state)
         
@@ -1430,9 +1440,16 @@ class SimulationRunner:
                     except Exception as e:
                         errors.append(f"Failed to delete {dir_name}/actions.jsonl: {str(e)}")
         
-        # Clean in-memory run state
+        # Clean in-memory run state and any orphan updater/processes
         if simulation_id in cls._run_states:
             del cls._run_states[simulation_id]
+        if simulation_id in cls._processes:
+            cls._processes.pop(simulation_id, None)
+        try:
+            from app.services.zep_graph_memory_updater import ZepGraphMemoryManager
+            ZepGraphMemoryManager.stop_updater(simulation_id, force=True)
+        except Exception as e:
+            logger.warning(f"Forced updater cleanup in cleanup_simulation_logs: {e}")
         
         logger.info(f"Simulation logs cleaned: {simulation_id}, deleted files: {cleaned_files}")
         

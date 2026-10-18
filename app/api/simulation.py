@@ -1597,85 +1597,61 @@ def start_simulation():
 
         force_restarted = False
         
-        # Allow restart if artifacts are prepared
-        if state.status != SimulationStatus.READY:
-            # Verify preparation completeness
-            is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
+        # Verify preparation completeness
+        is_prepared, prepare_info = _check_simulation_prepared(simulation_id)
+        if not is_prepared:
+            return jsonify({
+                "success": False,
+                "error": t('api.simNotReady', status=state.status.value)
+            }), 400
 
-            if is_prepared:
-                run_state = SimulationRunner.get_run_state(simulation_id)
-                updater = ZepGraphMemoryManager.get_updater(simulation_id)
-                needs_finalization = bool(
-                    run_state
-                    and run_state.runner_status in {
-                        RunnerStatus.RUNNING,
-                        RunnerStatus.PAUSED,
-                        RunnerStatus.STOPPING,
-                        RunnerStatus.FAILED,
-                    }
-                    and (
-                        run_state.runner_status
-                        in {
-                            RunnerStatus.RUNNING,
-                            RunnerStatus.PAUSED,
-                            RunnerStatus.STOPPING,
-                        }
-                        or updater is not None
-                    )
-                )
-                if needs_finalization:
-                    if not force:
-                        return jsonify({
-                            "success": False,
-                            "error": t('api.simRunningForceHint')
-                        }), 400
-                    logger.info(f"Force mode: terminating previous run {simulation_id}")
-                    try:
-                        stopped = SimulationRunner.stop_simulation(simulation_id)
-                    except SimulationStopPending as error:
-                        return jsonify({
-                            "success": False,
-                            "pending": True,
-                            "error": str(error),
-                        }), 409
-                    except Exception as error:
-                        return jsonify({
-                            "success": False,
-                            "error": (
-                                "Cannot restart until the previous simulation "
-                                f"finalizes safely: {error}"
-                            ),
-                        }), 409
-                    if stopped.runner_status != RunnerStatus.STOPPED:
-                        return jsonify({
-                            "success": False,
-                            "error": "Previous simulation did not reach STOPPED",
-                        }), 409
+        # Check if an active runner or updater needs finalization/cleanup
+        run_state = SimulationRunner.get_run_state(simulation_id)
+        updater = ZepGraphMemoryManager.get_updater(simulation_id)
+        active_statuses = {
+            RunnerStatus.STARTING,
+            RunnerStatus.RUNNING,
+            RunnerStatus.PAUSED,
+            RunnerStatus.STOPPING,
+        }
+        is_active = bool(
+            (run_state is not None and run_state.runner_status in active_statuses)
+            or updater is not None
+        )
 
-                # In force mode, clean up logs
-                if force:
-                    logger.info(f"Force mode: cleaning logs {simulation_id}")
-                    cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
-                    if not cleanup_result.get("success"):
-                        return jsonify({
-                            "success": False,
-                            "error": (
-                                "Failed to clean previous simulation logs: "
-                                f"{cleanup_result.get('errors')}"
-                            ),
-                        }), 500
-                    force_restarted = True
-
-                # Reset status to ready if process is terminated
-                logger.info(f"Simulation {simulation_id} prepared, resetting status to ready (was: {state.status.value})")
-                state.status = SimulationStatus.READY
-                manager._save_simulation_state(state)
-            else:
-                # Preparation incomplete
+        if is_active or force:
+            if is_active and not force:
                 return jsonify({
                     "success": False,
-                    "error": t('api.simNotReady', status=state.status.value)
+                    "error": t('api.simRunningForceHint')
                 }), 400
+
+            logger.info(f"Force mode or active run cleanup: terminating {simulation_id}")
+            try:
+                stopped = SimulationRunner.stop_simulation(simulation_id)
+            except SimulationStopPending as error:
+                return jsonify({
+                    "success": False,
+                    "pending": True,
+                    "error": str(error),
+                }), 409
+            except Exception as error:
+                logger.warning(f"Stop simulation encountered error during force reset: {error}")
+                if updater is not None:
+                    try:
+                        ZepGraphMemoryManager.stop_updater(simulation_id, force=True)
+                    except Exception as e:
+                        logger.warning(f"Forced updater stop ignored exception: {e}")
+
+            # Clean up simulation logs and reset in-memory runner state
+            logger.info(f"Cleaning logs and run state for {simulation_id}")
+            cleanup_result = SimulationRunner.cleanup_simulation_logs(simulation_id)
+            if not cleanup_result.get("success"):
+                logger.warning(f"Cleanup warnings for {simulation_id}: {cleanup_result.get('errors')}")
+            force_restarted = True
+
+        state.status = SimulationStatus.READY
+        manager._save_simulation_state(state)
         
         # Retrieve graph_id for graph streaming
         graph_id = None
